@@ -1,0 +1,41 @@
+bundle:
+  name: he-app-workaround
+
+experimental:
+  scripts:
+    postdeploy: bash ../tools/postdeploy.sh
+
+variables:
+  app_name:
+    description: Databricks App name
+    default: he-workaround-test
+
+  catalog:
+    default: <CATALOG>
+
+  schema:
+    default: dap_test
+
+  volume:
+    default: app_vol
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://xxxxxxxxxxxxxxx.cloud.databricks.com
+      profile: DEFAULT
+
+resources:
+  apps:
+    dap_one:
+      name: ${var.app_name}
+      description: Workaround test app
+      source_code_path: ./app
+      resources:
+        - name: volume
+          uc_securable:
+            securable_full_name: ${var.catalog}.${var.schema}.${var.volume}
+            securable_type: VOLUME
+            permission: WRITE_VOLUME

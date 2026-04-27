@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Volume access demo — {{ catalog }}.{{ schema }}.{{ volume }}</title>
+  <style>
+    :root {
+      --ok: #16a34a;
+      --bad: #dc2626;
+      --bg: #0b1020;
+      --card: #131a32;
+      --fg: #e5e7eb;
+      --muted: #9ca3af;
+      --border: #1f2a4a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 32px;
+      background: var(--bg); color: var(--fg);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 0 0 12px; color: var(--muted); font-weight: 500; }
+    .target { color: var(--muted); margin-bottom: 24px; font-family: monospace; }
+    .grid { display: grid; gap: 24px; max-width: 920px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 20px;
+    }
+    .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .check {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px; border: 1px solid var(--border); border-radius: 6px;
+      background: rgba(0,0,0,0.2);
+    }
+    .dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+    .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+    .dot.bad { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+    .dot.unknown { background: #6b7280; }
+    .check-label { font-weight: 600; }
+    .check-detail { color: var(--muted); font-size: 12px; margin-top: 2px; font-family: monospace; word-break: break-word; }
+    button {
+      background: #2563eb; color: white; border: 0; border-radius: 4px;
+      padding: 8px 14px; font: inherit; cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    button.secondary { background: transparent; border: 1px solid var(--border); }
+    button.danger { background: transparent; border: 1px solid var(--bad); color: var(--bad); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    input[type=file] { color: var(--fg); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    th { color: var(--muted); font-weight: 500; }
+    .row-actions { display: flex; gap: 6px; }
+    .row-actions button { padding: 4px 8px; font-size: 12px; }
+    pre { background: #000; padding: 12px; border-radius: 4px; overflow: auto; max-height: 300px; font-size: 12px; margin: 0; }
+    .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .summary { margin-top: 12px; }
+    .summary dt { font-weight: 600; display: inline-block; min-width: 80px; color: var(--muted); }
+    .empty { color: var(--muted); padding: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>Volume access demo</h1>
+  <h2>Auto-created App SP &times; UC Volume</h2>
+  <div class="target">/Volumes/{{ catalog }}/{{ schema }}/{{ volume }}/</div>
+
+  <div class="grid">
+    <section class="card">
+      <div class="toolbar">
+        <strong style="font-size:15px">Permission status</strong>
+        <span class="muted" id="status-ts" style="color:var(--muted);font-size:12px"></span>
+        <button class="secondary" onclick="refreshStatus()" style="margin-left:auto">Refresh</button>
+      </div>
+      <div class="checks" id="checks">
+        <!-- populated by JS -->
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="toolbar">
+        <strong style="font-size:15px">Upload a file to the volume</strong>
+      </div>
+      <form id="upload-form" enctype="multipart/form-data">
+        <input type="file" name="file" id="file-input" required>
+        <button type="submit">Upload</button>
+        <span id="upload-msg" style="margin-left:8px;color:var(--muted)"></span>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="toolbar">
+        <strong style="font-size:15px">Files in /uploads</strong>
+        <button class="secondary" onclick="refreshFiles()" style="margin-left:auto">Refresh</button>
+      </div>
+      <table id="files-table">
+        <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="summary" id="process-result"></div>
+    </section>
+  </div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+
+function fmtBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024*1024) return (n/1024).toFixed(1) + " KB";
+  return (n/1024/1024).toFixed(2) + " MB";
+}
+
+async function refreshStatus() {
+  const r = await fetch("/api/status");
+  const data = await r.json();
+  const wrap = $("#checks");
+  wrap.innerHTML = "";
+  for (const c of data.checks) {
+    const el = document.createElement("div");
+    el.className = "check";
+    el.innerHTML = `
+      <div class="dot ${c.ok ? "ok" : "bad"}"></div>
+      <div>
+        <div class="check-label">${c.label}</div>
+        <div class="check-detail">${c.detail}</div>
+      </div>
+    `;
+    wrap.appendChild(el);
+  }
+  $("#status-ts").textContent = "checked " + new Date(data.ts).toLocaleTimeString();
+}
+
+async function refreshFiles() {
+  const r = await fetch("/api/files");
+  const data = await r.json();
+  const tbody = $("#files-table tbody");
+  tbody.innerHTML = "";
+  if (!data.files.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">no files yet — upload one above</td></tr>`;
+    return;
+  }
+  for (const f of data.files) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${f.name}</td>
+      <td>${fmtBytes(f.size)}</td>
+      <td>${new Date(f.modified).toLocaleString()}</td>
+      <td class="row-actions">
+        <button onclick="processFile('${f.name}')">Process</button>
+        <a href="/api/file/${encodeURIComponent(f.name)}"><button class="secondary">Download</button></a>
+        <button class="danger" onclick="deleteFile('${f.name}')">Delete</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+async function processFile(name) {
+  const r = await fetch("/api/process/" + encodeURIComponent(name), { method: "POST" });
+  const data = await r.json();
+  const el = $("#process-result");
+  if (!data.ok) {
+    el.innerHTML = `<div style="color:var(--bad)">error: ${data.error}</div>`;
+    return;
+  }
+  const s = data.summary;
+  el.innerHTML = `
+    <strong>Processed: ${s.name}</strong>
+    <dl>
+      <dt>bytes</dt> <dd style="display:inline">${s.bytes}</dd><br>
+      <dt>text?</dt> <dd style="display:inline">${s.is_text ? "yes" : "no (binary)"}</dd><br>
+      ${s.is_text ? `<dt>lines</dt> <dd style="display:inline">${s.lines}</dd><br>
+                     <dt>words</dt> <dd style="display:inline">${s.words}</dd><br>` : ""}
+    </dl>
+    ${s.preview ? `<div style="color:var(--muted);margin:8px 0 4px">preview (first 500 chars):</div><pre>${escapeHtml(s.preview)}</pre>` : ""}
+  `;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+async function deleteFile(name) {
+  if (!confirm("delete " + name + "?")) return;
+  await fetch("/api/file/" + encodeURIComponent(name), { method: "DELETE" });
+  refreshFiles();
+}
+
+$("#upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  $("#upload-msg").textContent = "uploading...";
+  const r = await fetch("/api/upload", { method: "POST", body: fd });
+  const data = await r.json();
+  if (data.ok) {
+    $("#upload-msg").textContent = "uploaded " + data.name + " (" + fmtBytes(data.size) + ")";
+    $("#file-input").value = "";
+    refreshFiles();
+    refreshStatus();
+  } else {
+    $("#upload-msg").textContent = "error: " + data.error;
+  }
+});
+
+refreshStatus();
+refreshFiles();
+</script>
+</body>
+</html>
