@@ -3,7 +3,7 @@ bundle:
 
 experimental:
   scripts:
-    postdeploy: bash ../tools/postdeploy.sh
+    postdeploy: bash ./tools/postdeploy.sh
 
 variables:
   app_name:
@@ -24,6 +24,7 @@ targets:
     mode: development
     default: true
     workspace:
+      # Replace with your workspace host, e.g. https://adb-1234567890.azuredatabricks.net
       host: https://xxxxxxxxxxxxxxx.cloud.databricks.com
       profile: DEFAULT
 
@@ -33,6 +34,14 @@ resources:
       name: ${var.app_name}
       description: Workaround test app
       source_code_path: ./app
+      config:
+        env:
+          - name: CATALOG
+            value: ${var.catalog}
+          - name: SCHEMA
+            value: ${var.schema}
+          - name: VOLUME
+            value: ${var.volume}
       resources:
         - name: volume
           uc_securable:

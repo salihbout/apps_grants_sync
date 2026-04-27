@@ -39,32 +39,64 @@ The script is idempotent — re-runs are no-ops once privileges are in place.
 
 ```
 .
-├── tools/
-│   ├── grant_app_parents.py   # generic grant logic; bundle + single modes
-│   └── postdeploy.sh          # invoked by experimental.scripts.postdeploy
-└── test/
-    ├── app/                   # minimal Flask app that writes to a volume
-    └── databricks.yml         # demo bundle wired with the postdeploy hook
+├── databricks.yml             # demo bundle wired with the postdeploy hook
+├── app/                       # minimal Flask app that probes & uses the volume
+│   ├── app.py
+│   ├── requirements.txt
+│   └── templates/index.html
+└── tools/
+    ├── grant_app_parents.py   # generic grant logic; bundle + single modes
+    └── postdeploy.sh          # invoked by experimental.scripts.postdeploy
 ```
+
+## Try the demo
+
+1. Edit `databricks.yml`: set `targets.dev.workspace.host` and the
+   `catalog` / `schema` / `volume` variables to a UC volume you can grant on.
+2. Make sure the volume exists in the workspace (the bundle does not create it).
+3. Deploy:
+   ```sh
+   databricks bundle deploy -t dev
+   ```
+   The `experimental.scripts.postdeploy` hook will run automatically and grant
+   `USE_CATALOG` / `USE_SCHEMA` to the app's auto-created SP.
+4. Start the app:
+   ```sh
+   databricks bundle run dap_one
+   ```
+   Open the URL it prints. The status panel should show four green dots.
 
 ## Adopt it in an existing bundle
 
-Add three lines to your bundle's `databricks.yml`:
+Two ways:
+
+**A. Vendor `tools/` into your bundle (recommended).**
+Copy `tools/grant_app_parents.py` and `tools/postdeploy.sh` into your existing
+bundle so the hook ships with your code. Then add to your `databricks.yml`:
 
 ```yaml
 experimental:
   scripts:
-    postdeploy: bash <path-to-this-repo>/tools/postdeploy.sh
+    postdeploy: bash ./tools/postdeploy.sh
 ```
 
-Keep declaring leaf privileges the way you already do:
+**B. Keep this repo as a separate checkout.**
+Point the hook at the absolute path:
+
+```yaml
+experimental:
+  scripts:
+    postdeploy: bash /opt/apps_grants_sync/tools/postdeploy.sh
+```
+
+Either way, keep declaring leaf privileges the way you already do:
 
 ```yaml
 resources:
   apps:
     dap_one:
       name: ${var.app_name}
-      source_code_path: ../
+      source_code_path: ./app
       resources:
         - name: volume
           uc_securable:
@@ -101,6 +133,17 @@ python tools/grant_app_parents.py single \
   into the user site for the active `python3`.
 - Permission to grant on the target catalog and schema (the user running
   `bundle deploy` must already have `MANAGE` or be the owner).
+
+## Where to put the app's `command` and `env`
+
+This bundle declares the app's `command` and runtime env vars in the bundle's
+`apps.<key>.config` block (see `databricks.yml`), and **intentionally ships
+no `app/app.yaml`**. Reason: a source-side `app.yaml` overrides the bundle's
+`config`, so if both exist the bundle's `env` is silently ignored at runtime.
+
+Either define `command`/`env` in the bundle (single source of truth, what
+this repo does) **or** in `app/app.yaml` (works too, but you have to keep
+the catalog name in sync between two files). Pick one.
 
 ## Caveats
 
